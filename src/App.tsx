@@ -9,8 +9,7 @@ function App() {
     console.log(canvasRef); // { current: <canvasRef_object> }
     init(canvasRef.current);
   })
-
-
+  
   return (
     <>
       <canvas className='center' ref={canvasRef}></canvas>

@@ -1,4 +1,4 @@
-import {GRID_SIZE, getBuffer} from "./geom";
+import shader from './shader/shaders.wgsl';
 
 const UPDATE_INTERVAL = 1000;
 export const init = async (canvas: any) => {
@@ -26,54 +26,30 @@ export const init = async (canvas: any) => {
     alphaMode: 'premultiplied',
   });
 
-  const buffer = getBuffer(device);
-
   const cellPipeline = device.createRenderPipeline({
     label: "Cell pipeline",
     layout: "auto",
     vertex: {
-      module: buffer.cellShaderModule,
-      entryPoint: "vertexMain",
-      buffers: [buffer.vertexBufferLayout]
+      module: device.createShaderModule({
+        code : shader
+      }),
+      entryPoint: "vs_main",
     },
     fragment: {
-      module: buffer.cellShaderModule,
-      entryPoint: "fragmentMain",
+      module: device.createShaderModule({
+        code : shader
+      }),
+      entryPoint: "fs_main",
       targets: [{
         format: presentationFormat
       }]
+    }, 
+    primitive : {
+      topology : "triangle-list"
     }
   });
 
-  const bindGroups = [
-     device.createBindGroup({
-      label: "Cell renderer bind group A",
-      layout: cellPipeline.getBindGroupLayout(0),
-      entries: [{
-        binding: 0,
-        resource: { buffer: buffer.uniformBuffer }
-      }, {
-        binding: 1,
-        resource: { buffer: buffer.cellStateStorage[0] }
-      }],
-    }),
-     device.createBindGroup({
-      label: "Cell renderer bind group B",
-      layout: cellPipeline.getBindGroupLayout(0),
-      entries: [{
-        binding: 0,
-        resource: { buffer: buffer.uniformBuffer }
-      }, {
-        binding: 1,
-        resource: { buffer: buffer.cellStateStorage[1] }
-      }],
-    })
-  ];
-
-  let step =0;
-  function frame() {
-    step++;
-    const commandEncoder = device.createCommandEncoder();
+  const commandEncoder = device.createCommandEncoder();
     const textureView = context.getCurrentTexture().createView();
     const renderPassDescriptor: GPURenderPassDescriptor = {
       colorAttachments: [
@@ -88,15 +64,7 @@ export const init = async (canvas: any) => {
 
     const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
     passEncoder.setPipeline(cellPipeline);
-    passEncoder.setVertexBuffer(0, buffer.vertexBuffer);
-    passEncoder.setBindGroup(0, bindGroups[step % 2]);
-    passEncoder.draw(6, GRID_SIZE * GRID_SIZE); // 6 vertices
+    passEncoder.draw(3,1, 0, 0);
     passEncoder.end()
     device.queue.submit([commandEncoder.finish()]);
-    // requestAnimationFrame(frame);
   }
-
-  setInterval(frame, UPDATE_INTERVAL);
-
-  // requestAnimationFrame(frame);
-};
