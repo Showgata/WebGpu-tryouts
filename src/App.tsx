@@ -1,13 +1,17 @@
 import { useLayoutEffect, useRef } from 'react'
 import './App.css'
-import {init} from './webgpu'
+import { Renderer } from './renderer/renderer';
 
 function App() {
-  const canvasRef = useRef(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   
   useLayoutEffect(() => {
     console.log(canvasRef); // { current: <canvasRef_object> }
-    init(canvasRef.current);
+
+    if(canvasRef.current) {
+      const renderer = new Renderer(canvasRef.current);
+      void renderer.initialise();
+    }
   })
   
   return (
