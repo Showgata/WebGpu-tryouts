@@ -7,11 +7,11 @@ export class TriangleMesh {
 
   constructor(device: GPUDevice) {
 
-    // x y z r g b 
+    // x y z u v
     const vertices: Float32Array = new Float32Array([
-      0.0, 0.0, 0.5, 1.0, 0.0, 0.0,
-      0.0, -0.5, -0.5, 0.0, 1.0, 0.0,
-      0.0, 0.5, -0.5, 0.0, 0.0, 1.0
+      0.0, 0.0, 0.5, 0.5, 0.0,
+      0.0, -0.5, -0.5, 0.0, 1.0,
+      0.0, 0.5, -0.5, 1.0, 1.0
     ]);
 
     // Who can use the vertex data
@@ -30,7 +30,7 @@ export class TriangleMesh {
 
 
     this.bufferLayout = {
-      arrayStride: 24,
+      arrayStride: 20,
       attributes: [
         {
           shaderLocation: 0,
@@ -38,7 +38,7 @@ export class TriangleMesh {
           offset: 0
         }, {
           shaderLocation: 1,
-          format: "float32x3",
+          format: "float32x2",
           offset: 12
         }
       ]

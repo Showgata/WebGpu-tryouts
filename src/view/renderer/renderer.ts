@@ -1,6 +1,9 @@
 import { TriangleMesh } from "../triangle_mesh";
 import shader from "../shader/shaders.wgsl";
 import {mat4} from "gl-matrix";
+import { Material } from "../material/material";
+import { Camera } from "../../model/camera";
+import { Triangle } from "../../model/triangle";
 
 export class Renderer {
 
@@ -14,25 +17,21 @@ export class Renderer {
 
   // Triangle Mesh
   mesh!: TriangleMesh;
+  material!: Material;
 
   // Render Pipeline
   uniformBuffer!: GPUBuffer;
   pipeline!: GPURenderPipeline;
   bindGroup!: GPUBindGroup;
 
-  //Rotation
-  t: number;
-
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
-    this.t = 0.0;
   }
 
   async initialise() {
     await this.setupDevice();
     await this.createAssets();
     await this.createPipeline();
-    this.render();
   }
 
   async setupDevice() {
@@ -48,7 +47,7 @@ export class Renderer {
     const devicePixelRatio = window.devicePixelRatio || 1;
     this.canvas.width = this.canvas.clientWidth * devicePixelRatio;
     this.canvas.height = this.canvas.clientHeight * devicePixelRatio;
-    this.format = navigator.gpu.getPreferredCanvasFormat();
+    this.format = "rgba8unorm";
   
     this.context.configure({
       device: this.device,
@@ -59,6 +58,9 @@ export class Renderer {
 
   async createAssets() {
     this.mesh = new TriangleMesh(this.device);
+    this.material = new Material();
+
+    await this.material.initialise(this.device, "/me.jpg");
   }
 
   async createPipeline() {
@@ -70,7 +72,9 @@ export class Renderer {
 
     const bindGroupLayout = this.device.createBindGroupLayout({
       entries: [
-        {binding:0, visibility: GPUShaderStage.VERTEX, buffer:{}}
+        {binding:0, visibility: GPUShaderStage.VERTEX, buffer:{}},
+        {binding:1, visibility: GPUShaderStage.FRAGMENT, texture:{}}, // empty {} not neccessary, just good to see what the layout is being used for
+        {binding:2, visibility: GPUShaderStage.FRAGMENT, sampler:{}}
       ],
     });
   
@@ -82,6 +86,14 @@ export class Renderer {
           resource: {
             buffer: this.uniformBuffer
           }
+        },
+        {
+          binding: 1,
+          resource: this.material.view
+        },
+        {
+          binding: 2,
+          resource: this.material.sampler
         }
       ]
     });
@@ -115,48 +127,43 @@ export class Renderer {
     });
   }
 
-  render = () => {
+  async render (camera: Camera, triangles: Triangle[]) {
 
-    this.t += 0.01;
+    if(this.device) {
+      const projection = mat4.create();
+      mat4.perspective(projection, Math.PI / 4, 800/600, 0.1, 10);
 
-    if(this.t > 2.0 * Math.PI) {
-      this.t -= 2.0 * Math.PI;
+      const view = camera.view;
+      this.device.queue.writeBuffer(this.uniformBuffer, 64, <ArrayBuffer>view);
+      this.device.queue.writeBuffer(this.uniformBuffer, 128, <ArrayBuffer>projection);
+
+      const commandEncoder = this.device.createCommandEncoder();
+      const textureView = this.context.getCurrentTexture().createView();
+      const renderPassDescriptor: GPURenderPassDescriptor = {
+        colorAttachments: [
+          {
+            view: textureView,
+            clearValue: { r: 0, g: 0, b: 0.4, a: 1 },
+            loadOp: 'clear',
+            storeOp: 'store',
+          },
+        ],
+      };
+
+      const renderPass = commandEncoder.beginRenderPass(renderPassDescriptor);
+      renderPass.setPipeline(this.pipeline);
+
+
+      triangles.forEach((triangle) => {
+        const model = triangle.model;
+        this.device.queue.writeBuffer(this.uniformBuffer, 0, <ArrayBuffer>model);
+        renderPass.setBindGroup(0, this.bindGroup);
+        renderPass.setVertexBuffer(0,this.mesh.buffer);
+        renderPass.draw(3, 1, 0, 0);
+
+      });
+      renderPass.end()
+      this.device.queue.submit([commandEncoder.finish()]);
     }
-
-    const projection = mat4.create();
-    mat4.perspective(projection, Math.PI / 4, 800/600, 0.1, 10);
-
-    const view = mat4.create();
-    mat4.lookAt(view, [-2, 0, 2],[0, 0, 0], [0, 0, 1] ); // Understand this ?
-
-    const model = mat4.create();
-    mat4.rotate(model, model, this.t, [0, 0, 1]);
-
-    this.device.queue.writeBuffer(this.uniformBuffer, 0, <ArrayBuffer>model);
-    this.device.queue.writeBuffer(this.uniformBuffer, 64, <ArrayBuffer>view);
-    this.device.queue.writeBuffer(this.uniformBuffer, 128, <ArrayBuffer>projection);
-
-    const commandEncoder = this.device.createCommandEncoder();
-    const textureView = this.context.getCurrentTexture().createView();
-    const renderPassDescriptor: GPURenderPassDescriptor = {
-      colorAttachments: [
-        {
-          view: textureView,
-          clearValue: { r: 0, g: 0, b: 0.4, a: 1 },
-          loadOp: 'clear',
-          storeOp: 'store',
-        },
-      ],
-    };
-
-    const renderPass = commandEncoder.beginRenderPass(renderPassDescriptor);
-    renderPass.setPipeline(this.pipeline);
-    renderPass.setBindGroup(0, this.bindGroup);
-    renderPass.setVertexBuffer(0,this.mesh.buffer);
-    renderPass.draw(3, 1, 0, 0);
-    renderPass.end()
-    this.device.queue.submit([commandEncoder.finish()]);
-
-    requestAnimationFrame(this.render);
   }
 }
