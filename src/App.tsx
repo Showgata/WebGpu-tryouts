@@ -1,20 +1,45 @@
-import { useLayoutEffect, useRef } from 'react'
+import { MouseEventHandler, useLayoutEffect, useRef } from 'react'
 import './App.css'
-import {init} from './webgpu'
+import { KeypressState, MainControl } from './controller/main_control';
 
 function App() {
-  const canvasRef = useRef(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const mainControllerRef = useRef<MainControl>();
   
   useLayoutEffect(() => {
     console.log(canvasRef); // { current: <canvasRef_object> }
-    init(canvasRef.current);
+
+    if(canvasRef.current && !mainControllerRef.current) {
+      mainControllerRef.current = new MainControl(canvasRef.current);
+      mainControllerRef.current.initialiseRenderer();
+      mainControllerRef.current.run();
+    }
   })
 
+  const onMouseMove = (e: React.MouseEvent) => {
+    e.preventDefault();
 
+    if(mainControllerRef.current) {
+      mainControllerRef.current.handleMouseMove(e);
+    }
+  }
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if(mainControllerRef.current) {
+      mainControllerRef.current.handleKeypress(KeypressState.KEYDOWN, e);
+    }
+  }
+
+  const onKeyUp = (e: React.KeyboardEvent) => {
+    if(mainControllerRef.current) {
+      mainControllerRef.current.handleKeypress(KeypressState.KEYUP, e);
+    }
+  }
+  
   return (
-    <>
-      <canvas className='center' ref={canvasRef}></canvas>
-    </>
+    <div className='root'>
+      <canvas tabIndex={1} className='center' ref={canvasRef} onMouseMove={onMouseMove} onKeyDown={onKeyDown} onKeyUp={onKeyUp}/>
+    </div>
   )
 }
 
