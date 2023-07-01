@@ -3,7 +3,6 @@ import shader from "../shader/shaders.wgsl";
 import {mat4} from "gl-matrix";
 import { Material } from "../material/material";
 import { Camera } from "../../model/camera";
-import { Triangle } from "../../model/triangle";
 
 export class Renderer {
 
@@ -25,6 +24,12 @@ export class Renderer {
   pipeline!: GPURenderPipeline;
   bindGroup!: GPUBindGroup;
 
+  //Depth Stencil logics
+  depthStencilAttachment!: GPURenderPassDepthStencilAttachment;
+  depthStencilBuffer!: GPUTexture;
+  depthStencilView!: GPUTextureView;
+  depthStencilState!: GPUDepthStencilState;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
   }
@@ -32,6 +37,7 @@ export class Renderer {
   async initialise() {
     await this.setupDevice();
     await this.createAssets();
+    await this.makeDepthBufferResources();
     await this.createPipeline();
   }
 
@@ -69,6 +75,43 @@ export class Renderer {
     this.objectBuffer = this.device.createBuffer(modelBufferDescriptor);
 
     await this.material.initialise(this.device, "/me.jpg");
+  }
+
+  async makeDepthBufferResources() {
+    
+    this.depthStencilState = {
+      format: "depth24plus-stencil8",
+      depthWriteEnabled: true,
+      depthCompare: "less-equal",
+    };
+
+    const size: GPUExtent3D = {
+      width: this.canvas.width,
+      height: this.canvas.height,
+      depthOrArrayLayers: 1
+    }
+
+    const depthBufferDescriptor: GPUTextureDescriptor = {
+      size: size,
+      format: "depth24plus-stencil8",
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    }
+    this.depthStencilBuffer = this.device.createTexture(depthBufferDescriptor);
+
+    const depthViewBufferDescriptor: GPUTextureViewDescriptor = {
+      format: "depth24plus-stencil8",
+      dimension: "2d",
+      aspect: "all"
+    }
+    this.depthStencilView = this.depthStencilBuffer.createView(depthViewBufferDescriptor);
+    this.depthStencilAttachment = {
+      view: this.depthStencilView,
+      depthClearValue: 1,
+      depthLoadOp: "clear",
+      depthStoreOp: "store",
+      stencilLoadOp: "clear",
+      stencilStoreOp: "discard"
+    }
   }
 
   async createPipeline() {
@@ -139,6 +182,7 @@ export class Renderer {
       primitive : {
         topology : "triangle-list"
       },
+      depthStencil: this.depthStencilState
     });
   }
 
@@ -162,15 +206,15 @@ export class Renderer {
             clearValue: { r: 0, g: 0, b: 0.4, a: 1 },
             loadOp: 'clear',
             storeOp: 'store',
-          },
-        ],
+          }],
+          depthStencilAttachment: this.depthStencilAttachment
       };
 
       const renderPass = commandEncoder.beginRenderPass(renderPassDescriptor);
       renderPass.setPipeline(this.pipeline);
       renderPass.setBindGroup(0, this.bindGroup);
       renderPass.setVertexBuffer(0,this.mesh.buffer);
-      renderPass.draw(3, triangleCount, 0, 0);
+      renderPass.draw(3, triangleCount, 0, 0);  
       renderPass.end()
 
       this.device.queue.submit([commandEncoder.finish()]);
