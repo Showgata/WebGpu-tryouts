@@ -21,6 +21,7 @@ export class Renderer {
 
   // Render Pipeline
   uniformBuffer!: GPUBuffer;
+  objectBuffer!: GPUBuffer;
   pipeline!: GPURenderPipeline;
   bindGroup!: GPUBindGroup;
 
@@ -60,13 +61,20 @@ export class Renderer {
     this.mesh = new TriangleMesh(this.device);
     this.material = new Material();
 
+    const modelBufferDescriptor: GPUBufferDescriptor = {
+      size: 64 * 1024,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    }
+
+    this.objectBuffer = this.device.createBuffer(modelBufferDescriptor);
+
     await this.material.initialise(this.device, "/me.jpg");
   }
 
   async createPipeline() {
 
     this.uniformBuffer = this.device.createBuffer({
-      size: 64*3,
+      size: 64 * 2, // only view and projection for now...model details has been moved to storage buffer
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     })
 
@@ -74,7 +82,8 @@ export class Renderer {
       entries: [
         {binding:0, visibility: GPUShaderStage.VERTEX, buffer:{}},
         {binding:1, visibility: GPUShaderStage.FRAGMENT, texture:{}}, // empty {} not neccessary, just good to see what the layout is being used for
-        {binding:2, visibility: GPUShaderStage.FRAGMENT, sampler:{}}
+        {binding:2, visibility: GPUShaderStage.FRAGMENT, sampler:{}},
+        {binding:3, visibility: GPUShaderStage.VERTEX, buffer:{ type: "read-only-storage", hasDynamicOffset: false}} // storage buffer
       ],
     });
   
@@ -94,7 +103,13 @@ export class Renderer {
         {
           binding: 2,
           resource: this.material.sampler
-        }
+        },
+        {
+          binding: 3,
+          resource: {
+            buffer: this.objectBuffer
+          }
+        },
       ]
     });
   
@@ -127,15 +142,16 @@ export class Renderer {
     });
   }
 
-  async render (camera: Camera, triangles: Triangle[]) {
+  async render (camera: Camera, triangles: Float32Array, triangleCount: number) {
 
-    if(this.device) {
+    if(this.device && this.uniformBuffer) {
       const projection = mat4.create();
       mat4.perspective(projection, Math.PI / 4, 800/600, 0.1, 10);
 
       const view = camera.view;
-      this.device.queue.writeBuffer(this.uniformBuffer, 64, <ArrayBuffer>view);
-      this.device.queue.writeBuffer(this.uniformBuffer, 128, <ArrayBuffer>projection);
+      this.device.queue.writeBuffer(this.objectBuffer, 0, <ArrayBuffer>triangles, 0, triangles.length);
+      this.device.queue.writeBuffer(this.uniformBuffer, 0, <ArrayBuffer>view);
+      this.device.queue.writeBuffer(this.uniformBuffer, 64, <ArrayBuffer>projection);
 
       const commandEncoder = this.device.createCommandEncoder();
       const textureView = this.context.getCurrentTexture().createView();
@@ -152,17 +168,11 @@ export class Renderer {
 
       const renderPass = commandEncoder.beginRenderPass(renderPassDescriptor);
       renderPass.setPipeline(this.pipeline);
-
-
-      triangles.forEach((triangle) => {
-        const model = triangle.model;
-        this.device.queue.writeBuffer(this.uniformBuffer, 0, <ArrayBuffer>model);
-        renderPass.setBindGroup(0, this.bindGroup);
-        renderPass.setVertexBuffer(0,this.mesh.buffer);
-        renderPass.draw(3, 1, 0, 0);
-
-      });
+      renderPass.setBindGroup(0, this.bindGroup);
+      renderPass.setVertexBuffer(0,this.mesh.buffer);
+      renderPass.draw(3, triangleCount, 0, 0);
       renderPass.end()
+
       this.device.queue.submit([commandEncoder.finish()]);
     }
   }
